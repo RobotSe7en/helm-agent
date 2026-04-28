@@ -17,24 +17,16 @@ def test_web_health_and_index() -> None:
     assert "Helm Agent" in index.text
 
 
-def test_model_test_api_uses_request_config_with_echo_default(monkeypatch) -> None:
-    from helm.web.api import app as app_module
+def test_model_test_api_uses_request_config(monkeypatch) -> None:
     from helm.runtime.result import RuntimeResult
+    from helm.web.api import app as app_module
 
     seen = {}
-    original_settings = app_module.Settings
-
-    class CapturingSettings(original_settings):
-        def __init__(self, **kwargs):
-            seen.update(kwargs)
-            super().__init__(**kwargs)
 
     class FakeRuntime:
         async def invoke(self, invocation):
             seen["invocation"] = invocation
             return RuntimeResult(status="completed", output="ok")
-
-    monkeypatch.setattr(app_module, "Settings", CapturingSettings)
 
     def capture_runtime(settings):
         seen["settings"] = settings
@@ -68,8 +60,8 @@ def test_model_test_api_uses_request_config_with_echo_default(monkeypatch) -> No
 
 
 def test_web_config_hides_api_key(monkeypatch) -> None:
-    from helm.web.api import app as app_module
     from helm.config.settings import ProviderConfig, Settings
+    from helm.web.api import app as app_module
 
     monkeypatch.setattr(
         app_module.Settings,
@@ -98,16 +90,16 @@ def test_web_config_hides_api_key(monkeypatch) -> None:
     assert "secret" not in response.text
 
 
-def test_chat_api_uses_plain_chat_profile_without_default_tools(monkeypatch) -> None:
-    from helm.web.api import app as app_module
+def test_chat_api_uses_requested_toolsets_without_profile_override(monkeypatch) -> None:
     from helm.runtime.result import RuntimeResult
+    from helm.web.api import app as app_module
 
     seen = {}
 
     class FakeRuntime:
         async def invoke(self, invocation):
             seen["invocation"] = invocation
-            return RuntimeResult(status="completed", output="你好！")
+            return RuntimeResult(status="completed", output="hello")
 
     monkeypatch.setattr(app_module, "create_runtime", lambda settings: FakeRuntime())
     client = TestClient(create_app())
@@ -119,21 +111,22 @@ def test_chat_api_uses_plain_chat_profile_without_default_tools(monkeypatch) -> 
             "base_url": "http://example.test/v1",
             "model": "custom-model",
             "api_key": "secret",
-            "prompt": "你好",
+            "prompt": "hello",
+            "toolsets": ["filesystem"],
         },
     )
 
     assert response.status_code == 200
-    assert response.json()["output"] == "你好！"
+    assert response.json()["output"] == "hello"
     assert seen["invocation"].goal == "Conversation"
     assert seen["invocation"].task_id is None
-    assert seen["invocation"].toolsets == []
-    assert seen["invocation"].profile_obj.default_toolsets == []
+    assert seen["invocation"].toolsets == ["filesystem"]
+    assert seen["invocation"].profile_obj is None
 
 
 def test_model_test_api_passes_profile_skills_and_toolsets(monkeypatch) -> None:
-    from helm.web.api import app as app_module
     from helm.runtime.result import RuntimeResult
+    from helm.web.api import app as app_module
 
     seen = {}
 

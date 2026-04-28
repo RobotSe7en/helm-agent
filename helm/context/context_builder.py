@@ -33,17 +33,23 @@ class ContextBuilder:
         profile = self.resolve_profile(invocation)
         skills = self.resolve_skills(profile, invocation)
         system_prompt = self.prompt_builder.build_system_prompt(profile, skills)
-        if invocation.metadata.get("plain_chat"):
-            task_context = invocation.instructions
-        else:
-            task_context = (
-                f"Run: {invocation.run_id}\n"
-                f"Task: {invocation.task_id or '<none>'}\n"
-                f"Goal: {invocation.goal}\n"
-                f"Instructions:\n{invocation.instructions}\n"
-                f"Metadata: {invocation.metadata}"
-            )
+        task_context = self._build_user_context(invocation)
         return [
             ChatMessage(role="system", content=system_prompt),
             ChatMessage(role="user", content=task_context),
         ]
+
+    def _build_user_context(self, invocation: RuntimeInvocation) -> str:
+        parts = ["# User Request", invocation.instructions.strip()]
+        if invocation.goal.strip() and invocation.goal.strip() != invocation.instructions.strip():
+            parts.extend(["# Objective", invocation.goal.strip()])
+
+        acceptance_criteria = invocation.metadata.get("acceptance_criteria")
+        if acceptance_criteria:
+            if isinstance(acceptance_criteria, list):
+                criteria = "\n".join(f"- {item}" for item in acceptance_criteria)
+            else:
+                criteria = str(acceptance_criteria)
+            parts.extend(["# Acceptance Criteria", criteria])
+
+        return "\n\n".join(parts)

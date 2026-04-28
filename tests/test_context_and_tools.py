@@ -9,18 +9,18 @@ from helm.context.context_builder import ContextBuilder
 from helm.context.prompt_builder import PromptBuilder
 from helm.profiles.loader import ProfileLoader
 from helm.profiles.registry import ProfileRegistry
+from helm.providers.base import ChatMessage, ProviderResponse, ToolCall
+from helm.providers.registry import ProviderRegistry
+from helm.providers.resolver import ProviderResolver
 from helm.runtime.invocation import RuntimeInvocation
 from helm.runtime.loop import RuntimeLoop
+from helm.runtime.tool_dispatcher import ToolDispatcher
 from helm.skills.loader import SkillLoader
 from helm.skills.registry import SkillRegistry
 from helm.tools.filesystem import FileListTool, FileReadTool, FileWriteTool
 from helm.tools.git import GitDiffTool, GitStatusTool
 from helm.tools.registry import ToolRegistry
 from helm.tools.shell import ShellRunTool
-from helm.providers.registry import ProviderRegistry
-from helm.providers.resolver import ProviderResolver
-from helm.providers.base import ChatMessage, ProviderResponse, ToolCall
-from helm.runtime.tool_dispatcher import ToolDispatcher
 
 
 class SequencedProvider:
@@ -39,9 +39,9 @@ class SequencedProvider:
         return self.responses[len(self.messages_by_call) - 1]
 
 
-def test_context_builder_injects_profile_and_skill() -> None:
-    settings = Settings(project_root=Path.cwd())
-    builder = ContextBuilder(
+def make_context_builder(project_root: Path) -> ContextBuilder:
+    settings = Settings(project_root=project_root)
+    return ContextBuilder(
         profile_registry=ProfileRegistry(
             ProfileLoader(settings.resolve_project_path(settings.profile_dir))
         ),
@@ -50,6 +50,10 @@ def test_context_builder_injects_profile_and_skill() -> None:
         ),
         prompt_builder=PromptBuilder(),
     )
+
+
+def test_context_builder_injects_profile_and_skill() -> None:
+    builder = make_context_builder(Path.cwd())
 
     messages = builder.build_messages(
         RuntimeInvocation(
@@ -65,17 +69,8 @@ def test_context_builder_injects_profile_and_skill() -> None:
     assert "Task Planning Skill" in messages[0].content
 
 
-def test_context_builder_plain_chat_uses_only_instructions() -> None:
-    settings = Settings(project_root=Path.cwd())
-    builder = ContextBuilder(
-        profile_registry=ProfileRegistry(
-            ProfileLoader(settings.resolve_project_path(settings.profile_dir))
-        ),
-        skill_registry=SkillRegistry(
-            SkillLoader(settings.resolve_project_path(settings.skill_dir))
-        ),
-        prompt_builder=PromptBuilder(),
-    )
+def test_context_builder_user_context_hides_internal_ids() -> None:
+    builder = make_context_builder(Path.cwd())
 
     messages = builder.build_messages(
         RuntimeInvocation(
@@ -83,12 +78,14 @@ def test_context_builder_plain_chat_uses_only_instructions() -> None:
             task_id="web_chat_message",
             profile="default",
             goal="Conversation",
-            instructions="你好",
-            metadata={"plain_chat": True},
+            instructions="hello",
         )
     )
 
-    assert messages[1].content == "你好"
+    assert "# User Request" in messages[1].content
+    assert "hello" in messages[1].content
+    assert "web_chat_message" not in messages[1].content
+    assert "Run:" not in messages[1].content
 
 
 def test_tool_registry_exports_openai_compatible_schema_names() -> None:
@@ -116,12 +113,6 @@ async def test_filesystem_list_tool_lists_project_entries(tmp_path: Path) -> Non
 @pytest.mark.asyncio
 async def test_runtime_events_include_profile_skills_and_tools() -> None:
     settings = Settings(project_root=Path.cwd())
-    profile_registry = ProfileRegistry(
-        ProfileLoader(settings.resolve_project_path(settings.profile_dir))
-    )
-    skill_registry = SkillRegistry(
-        SkillLoader(settings.resolve_project_path(settings.skill_dir))
-    )
     tool_registry = ToolRegistry()
     tool_registry.register(FileListTool(Path.cwd()))
     tool_registry.register(FileReadTool(Path.cwd()))
@@ -130,11 +121,7 @@ async def test_runtime_events_include_profile_skills_and_tools() -> None:
     tool_registry.register(GitStatusTool(Path.cwd()))
     tool_registry.register(GitDiffTool(Path.cwd()))
     runtime = RuntimeLoop(
-        context_builder=ContextBuilder(
-            profile_registry=profile_registry,
-            skill_registry=skill_registry,
-            prompt_builder=PromptBuilder(),
-        ),
+        context_builder=make_context_builder(Path.cwd()),
         provider_resolver=ProviderResolver(ProviderRegistry(), settings),
         tool_dispatcher=ToolDispatcher(tool_registry),
     )
@@ -183,15 +170,7 @@ async def test_runtime_continues_tool_loop_until_provider_finishes(tmp_path: Pat
     tool_registry.register(GitStatusTool(tmp_path))
     tool_registry.register(GitDiffTool(tmp_path))
     runtime = RuntimeLoop(
-        context_builder=ContextBuilder(
-            profile_registry=ProfileRegistry(
-                ProfileLoader(settings.resolve_project_path(settings.profile_dir))
-            ),
-            skill_registry=SkillRegistry(
-                SkillLoader(settings.resolve_project_path(settings.skill_dir))
-            ),
-            prompt_builder=PromptBuilder(),
-        ),
+        context_builder=make_context_builder(tmp_path),
         provider_resolver=ProviderResolver(provider_registry, settings),
         tool_dispatcher=ToolDispatcher(tool_registry),
     )

@@ -108,6 +108,20 @@ textarea:focus {
   height: 16px;
 }
 
+.toolset-group {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-soft);
+}
+
+.toolset-group > span {
+  font-size: 13px;
+  font-weight: 650;
+}
+
 .chat {
   min-width: 0;
   display: grid;

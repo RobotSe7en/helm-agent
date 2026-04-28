@@ -2,7 +2,5 @@ id: default
 name: Default Agent
 provider: echo
 skills: []
-default_toolsets:
-  - filesystem
-  - git
+default_toolsets: []
 max_iterations: 8

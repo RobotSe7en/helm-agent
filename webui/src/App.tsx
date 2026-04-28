@@ -15,6 +15,7 @@ type ModelConfig = {
   base_url: string;
   model: string;
   api_key: string;
+  toolsets: string[];
   max_tokens: number;
   temperature: number;
   enable_thinking: boolean;
@@ -42,6 +43,7 @@ const defaultConfig: ModelConfig = {
   base_url: "https://api.minimaxi.com/v1",
   model: "MiniMax-M2.1",
   api_key: "",
+  toolsets: [],
   max_tokens: 1024,
   temperature: 0.2,
   enable_thinking: false,
@@ -120,6 +122,7 @@ export function App() {
           model: config.model,
           api_key: config.api_key,
           prompt: text,
+          toolsets: config.toolsets,
           max_tokens: config.max_tokens,
           temperature: config.temperature,
           enable_thinking: config.enable_thinking
@@ -231,6 +234,24 @@ export function App() {
           />
           Enable thinking
         </label>
+        <div className="toolset-group" aria-label="Allowed tools">
+          <span>Tools</span>
+          {["filesystem", "git", "shell"].map((toolset) => (
+            <label className="toggle" key={toolset}>
+              <input
+                type="checkbox"
+                checked={config.toolsets.includes(toolset)}
+                onChange={(event) => {
+                  const nextToolsets = event.target.checked
+                    ? [...config.toolsets, toolset]
+                    : config.toolsets.filter((item) => item !== toolset);
+                  setConfig({ ...config, toolsets: nextToolsets });
+                }}
+              />
+              {toolset}
+            </label>
+          ))}
+        </div>
         <label className="toggle">
           <input
             type="checkbox"

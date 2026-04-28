@@ -124,6 +124,49 @@ def test_chat_api_uses_requested_toolsets_without_profile_override(monkeypatch) 
     assert seen["invocation"].profile_obj is None
 
 
+def test_chat_stream_returns_tool_and_delta_events(monkeypatch) -> None:
+    from helm.runtime.result import RuntimeResult
+    from helm.web.api import app as app_module
+
+    class FakeRuntime:
+        async def invoke(self, invocation):
+            return RuntimeResult(
+                status="completed",
+                output="hello **markdown**",
+                events=[
+                    {
+                        "type": "tool.completed",
+                        "tool": "filesystem_list",
+                        "arguments": {"path": "."},
+                        "ok": True,
+                        "content": "file\tREADME.md",
+                    }
+                ],
+            )
+
+    monkeypatch.setattr(app_module, "create_runtime", lambda settings: FakeRuntime())
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/chat/stream",
+        json={
+            "provider": "test-provider",
+            "base_url": "http://example.test/v1",
+            "model": "custom-model",
+            "api_key": "secret",
+            "prompt": "List files.",
+            "toolsets": ["filesystem"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert '"type": "tool"' in response.text
+    assert "filesystem_list" in response.text
+    assert '"type": "delta"' in response.text
+    assert "hello **markdown**" in response.text
+    assert '"type": "done"' in response.text
+
+
 def test_model_test_api_passes_profile_skills_and_toolsets(monkeypatch) -> None:
     from helm.runtime.result import RuntimeResult
     from helm.web.api import app as app_module

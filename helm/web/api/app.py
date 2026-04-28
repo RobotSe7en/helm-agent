@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from collections.abc import AsyncIterator
 
 from pydantic import BaseModel, Field
 
@@ -31,6 +33,7 @@ def create_app():
     try:
         from fastapi import FastAPI
         from fastapi.responses import FileResponse, HTMLResponse
+        from fastapi.responses import StreamingResponse
         from fastapi.staticfiles import StaticFiles
     except ImportError as exc:
         raise RuntimeError("Install helm-agent[web] to use the web app") from exc
@@ -61,11 +64,18 @@ def create_app():
 
     @app.post("/api/chat")
     async def chat(request: ChatRequest) -> dict[str, object]:
-        return await _run_chat(request)
+        return await _run_chat_result(request)
+
+    @app.post("/api/chat/stream")
+    async def chat_stream(request: ChatRequest):
+        return StreamingResponse(
+            _run_chat_stream(request),
+            media_type="application/x-ndjson",
+        )
 
     @app.post("/api/model/test")
     async def test_model(request: ModelTestRequest) -> dict[str, object]:
-        return await _run_chat(request)
+        return await _run_chat_result(request)
 
     if assets_root.exists():
         app.mount("/assets", StaticFiles(directory=assets_root), name="assets")
@@ -77,54 +87,80 @@ def create_app():
             return FileResponse(index_path)
         return HTMLResponse(DEV_INDEX_HTML)
 
-    async def _run_chat(request: ChatRequest) -> dict[str, object]:
-        try:
-            settings = _settings_for_request(request)
-            runtime = create_runtime(settings)
-            result = await runtime.invoke(
-                RuntimeInvocation(
-                    run_id="web",
-                    task_id=None,
-                    profile=request.profile,
-                    goal="Conversation",
-                    instructions=request.prompt,
-                    provider=request.provider,
-                    skills=request.skills,
-                    toolsets=request.toolsets,
-                    metadata={
-                        "temperature": request.temperature,
-                        "max_tokens": request.max_tokens,
-                        "extra_body": {
-                            "chat_template_kwargs": {
-                                "enable_thinking": request.enable_thinking,
-                            }
-                        },
+    return app
+
+
+async def _run_chat_stream(request: ChatRequest) -> AsyncIterator[str]:
+    yield _json_line({"type": "status", "status": "running"})
+    result = await _run_chat_result(request)
+    for event in result["events"]:
+        if event.get("type") == "tool.completed":
+            yield _json_line({"type": "tool", "event": event})
+    output = str(result["output"] or "")
+    if output:
+        for index in range(0, len(output), 80):
+            yield _json_line({"type": "delta", "content": output[index : index + 80]})
+    yield _json_line(
+        {
+            "type": "done",
+            "status": result["status"],
+            "error": result["error"],
+            "events": result["events"],
+            "effective_config": result["effective_config"],
+        }
+    )
+
+
+async def _run_chat_result(request: ChatRequest) -> dict[str, object]:
+    try:
+        settings = _settings_for_request(request)
+        runtime = create_runtime(settings)
+        result = await runtime.invoke(
+            RuntimeInvocation(
+                run_id="web",
+                task_id=None,
+                profile=request.profile,
+                goal="Conversation",
+                instructions=request.prompt,
+                provider=request.provider,
+                skills=request.skills,
+                toolsets=request.toolsets,
+                metadata={
+                    "temperature": request.temperature,
+                    "max_tokens": request.max_tokens,
+                    "extra_body": {
+                        "chat_template_kwargs": {
+                            "enable_thinking": request.enable_thinking,
+                        }
                     },
-                )
+                },
             )
-        except Exception as exc:
-            return {
-                "status": "failed",
-                "output": "",
-                "events": [
-                    {
-                        "type": "runtime.failed",
-                        "error_type": type(exc).__name__,
-                        "error": str(exc),
-                    }
-                ],
-                "error": f"{type(exc).__name__}: {exc}",
-                "effective_config": _effective_config(request),
-            }
+        )
+    except Exception as exc:
         return {
-            "status": result.status,
-            "output": result.output,
-            "events": result.events,
-            "error": result.error,
+            "status": "failed",
+            "output": "",
+            "events": [
+                {
+                    "type": "runtime.failed",
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                }
+            ],
+            "error": f"{type(exc).__name__}: {exc}",
             "effective_config": _effective_config(request),
         }
+    return {
+        "status": result.status,
+        "output": result.output,
+        "events": result.events,
+        "error": result.error,
+        "effective_config": _effective_config(request),
+    }
 
-    return app
+
+def _json_line(payload: dict[str, object]) -> str:
+    return json.dumps(payload, ensure_ascii=False) + "\n"
 
 
 def _settings_for_request(request: ChatRequest) -> Settings:

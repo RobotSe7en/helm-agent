@@ -86,6 +86,17 @@ The local OpenAI-compatible provider is working.
 
 ## Start The Web Test Page
 
+Build the TypeScript Web UI:
+
+```powershell
+cd webui
+npm install
+npm run build
+cd ..
+```
+
+Start the FastAPI backend, which serves `webui/dist`:
+
 ```powershell
 .\.venv\Scripts\python.exe -m uvicorn helm.web.api.app:create_app --factory --host 127.0.0.1 --port 8000
 ```
@@ -96,27 +107,11 @@ Open:
 http://127.0.0.1:8000
 ```
 
-The page lets you configure:
+The page currently provides:
 
-- Base URL
-- Model
-- API key
-- Profile
-- Skills
-- Toolsets
-- Max tokens
-- Temperature
-- Enable thinking
-- Prompt
-- Whether to show tool results
-
-It shows:
-
-- final model output
-- effective config
-- execution log
-- tool calls and arguments
-- optional tool return content
+- A chat box.
+- Model configuration for provider, base URL, model, API key, max tokens, and temperature.
+- A hide-thinking toggle for models that return `<think>...</think>` blocks.
 
 ## Example Web Test
 

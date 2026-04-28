@@ -15,7 +15,6 @@ def test_web_health_and_index() -> None:
     index = client.get("/")
     assert index.status_code == 200
     assert "Helm Agent" in index.text
-    assert "Base URL" in index.text
 
 
 def test_model_test_api_uses_request_config_with_echo_default(monkeypatch) -> None:
@@ -36,7 +35,12 @@ def test_model_test_api_uses_request_config_with_echo_default(monkeypatch) -> No
             return RuntimeResult(status="completed", output="ok")
 
     monkeypatch.setattr(app_module, "Settings", CapturingSettings)
-    monkeypatch.setattr(app_module, "create_runtime", lambda settings: FakeRuntime())
+
+    def capture_runtime(settings):
+        seen["settings"] = settings
+        return FakeRuntime()
+
+    monkeypatch.setattr(app_module, "create_runtime", capture_runtime)
     client = TestClient(create_app())
 
     response = client.post(
@@ -54,12 +58,44 @@ def test_model_test_api_uses_request_config_with_echo_default(monkeypatch) -> No
     )
 
     assert response.status_code == 200
-    assert seen["providers"]["test-provider"].base_url == "http://example.test/v1"
-    assert seen["providers"]["test-provider"].model == "custom-model"
-    assert seen["providers"]["test-provider"].api_key == "secret"
+    provider = seen["settings"].providers["test-provider"]
+    assert provider.base_url == "http://example.test/v1"
+    assert provider.model == "custom-model"
+    assert provider.api_key == "secret"
     assert seen["invocation"].profile == "default"
     assert seen["invocation"].provider == "test-provider"
     assert response.json()["output"] == "ok"
+
+
+def test_web_config_hides_api_key(monkeypatch) -> None:
+    from helm.web.api import app as app_module
+    from helm.config.settings import ProviderConfig, Settings
+
+    monkeypatch.setattr(
+        app_module.Settings,
+        "load",
+        classmethod(
+            lambda cls: Settings(
+                default_provider="test-provider",
+                providers={
+                    "test-provider": ProviderConfig(
+                        id="test-provider",
+                        base_url="http://example.test/v1",
+                        model="custom-model",
+                        api_key="secret",
+                    )
+                },
+            )
+        ),
+    )
+    client = TestClient(create_app())
+
+    response = client.get("/api/config")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider"]["has_api_key"] is True
+    assert "secret" not in response.text
 
 
 def test_model_test_api_passes_profile_skills_and_toolsets(monkeypatch) -> None:

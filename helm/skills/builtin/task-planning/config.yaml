@@ -1,0 +1,7 @@
+id: task-planning
+name: Task Planning
+description: Create small, executable task plans.
+tool_requirements: []
+triggers:
+  - plan
+  - taskgraph

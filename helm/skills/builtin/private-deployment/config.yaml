@@ -1,0 +1,7 @@
+id: private-deployment
+name: Private Deployment
+description: Keep data, providers, and artifacts inside a private deployment boundary.
+tool_requirements: []
+triggers:
+  - private
+  - deployment

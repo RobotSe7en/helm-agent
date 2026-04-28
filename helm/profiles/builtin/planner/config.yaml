@@ -1,0 +1,9 @@
+id: planner
+name: Planner
+provider: echo
+skills:
+  - task-planning
+default_toolsets:
+  - filesystem
+  - git
+max_iterations: 6

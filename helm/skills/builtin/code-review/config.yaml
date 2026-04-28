@@ -1,0 +1,9 @@
+id: code-review
+name: Code Review
+description: Review changes for correctness and risk.
+tool_requirements:
+  - filesystem.read
+  - git.diff
+triggers:
+  - review
+  - diff

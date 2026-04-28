@@ -1,0 +1,11 @@
+id: code-execution
+name: Code Execution
+description: Execute scoped code or project tasks.
+tool_requirements:
+  - filesystem.read
+  - filesystem.write
+  - shell.run
+triggers:
+  - implement
+  - fix
+  - run

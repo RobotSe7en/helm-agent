@@ -1,0 +1,10 @@
+id: executor
+name: Executor
+provider: echo
+skills:
+  - code-execution
+default_toolsets:
+  - filesystem
+  - shell
+  - git
+max_iterations: 8

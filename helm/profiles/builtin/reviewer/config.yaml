@@ -1,0 +1,9 @@
+id: reviewer
+name: Reviewer
+provider: echo
+skills:
+  - code-review
+default_toolsets:
+  - filesystem
+  - git
+max_iterations: 6

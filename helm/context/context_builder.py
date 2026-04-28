@@ -33,13 +33,16 @@ class ContextBuilder:
         profile = self.resolve_profile(invocation)
         skills = self.resolve_skills(profile, invocation)
         system_prompt = self.prompt_builder.build_system_prompt(profile, skills)
-        task_context = (
-            f"Run: {invocation.run_id}\n"
-            f"Task: {invocation.task_id or '<none>'}\n"
-            f"Goal: {invocation.goal}\n"
-            f"Instructions:\n{invocation.instructions}\n"
-            f"Metadata: {invocation.metadata}"
-        )
+        if invocation.metadata.get("plain_chat"):
+            task_context = invocation.instructions
+        else:
+            task_context = (
+                f"Run: {invocation.run_id}\n"
+                f"Task: {invocation.task_id or '<none>'}\n"
+                f"Goal: {invocation.goal}\n"
+                f"Instructions:\n{invocation.instructions}\n"
+                f"Metadata: {invocation.metadata}"
+            )
         return [
             ChatMessage(role="system", content=system_prompt),
             ChatMessage(role="user", content=task_context),

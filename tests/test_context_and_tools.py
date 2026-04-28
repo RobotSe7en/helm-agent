@@ -65,6 +65,32 @@ def test_context_builder_injects_profile_and_skill() -> None:
     assert "Task Planning Skill" in messages[0].content
 
 
+def test_context_builder_plain_chat_uses_only_instructions() -> None:
+    settings = Settings(project_root=Path.cwd())
+    builder = ContextBuilder(
+        profile_registry=ProfileRegistry(
+            ProfileLoader(settings.resolve_project_path(settings.profile_dir))
+        ),
+        skill_registry=SkillRegistry(
+            SkillLoader(settings.resolve_project_path(settings.skill_dir))
+        ),
+        prompt_builder=PromptBuilder(),
+    )
+
+    messages = builder.build_messages(
+        RuntimeInvocation(
+            run_id="web",
+            task_id="web_chat_message",
+            profile="default",
+            goal="Conversation",
+            instructions="你好",
+            metadata={"plain_chat": True},
+        )
+    )
+
+    assert messages[1].content == "你好"
+
+
 def test_tool_registry_exports_openai_compatible_schema_names() -> None:
     registry = ToolRegistry()
     registry.register(FileReadTool(Path.cwd()))

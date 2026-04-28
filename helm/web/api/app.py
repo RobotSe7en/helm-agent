@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from helm import __version__
 from helm.app import create_runtime
 from helm.config.settings import ProviderConfig, Settings
+from helm.profiles.schema import AgentProfile
 from helm.runtime.invocation import RuntimeInvocation
 
 
@@ -83,15 +84,17 @@ def create_app():
             runtime = create_runtime(settings)
             result = await runtime.invoke(
                 RuntimeInvocation(
-                    run_id="web_chat",
-                    task_id="web_chat_message",
+                    run_id="web",
+                    task_id=None,
                     profile=request.profile,
-                    goal="Web chat",
+                    profile_obj=_chat_profile(request.profile),
+                    goal="Conversation",
                     instructions=request.prompt,
                     provider=request.provider,
                     skills=request.skills,
                     toolsets=request.toolsets,
                     metadata={
+                        "plain_chat": True,
                         "temperature": request.temperature,
                         "max_tokens": request.max_tokens,
                         "extra_body": {
@@ -140,6 +143,21 @@ def _settings_for_request(request: ChatRequest) -> Settings:
     settings.default_provider = request.provider
     settings.providers = {request.provider: provider}
     return settings
+
+
+def _chat_profile(profile_id: str) -> AgentProfile:
+    return AgentProfile(
+        id=profile_id,
+        name="Chat Agent",
+        root=Path.cwd(),
+        profile=(
+            "You are Helm Agent, a general-purpose AI assistant in a web chat. "
+            "Answer the user's message directly in the same language when appropriate. "
+            "Do not assume the user is asking about Helm charts unless they say so. "
+            "Do not interpret run ids, task ids, or internal labels as user requests."
+        ),
+        default_toolsets=[],
+    )
 
 
 def _effective_config(request: ChatRequest) -> dict[str, object]:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -27,4 +28,7 @@ class Provider(Protocol):
     id: str
 
     async def complete(self, messages: list[ChatMessage], **kwargs: object) -> ProviderResponse:
+        ...
+
+    async def stream(self, messages: list[ChatMessage], **kwargs: object) -> AsyncIterator[str]:
         ...

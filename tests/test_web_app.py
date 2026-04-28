@@ -167,6 +167,53 @@ def test_chat_stream_returns_tool_and_delta_events(monkeypatch) -> None:
     assert '"type": "done"' in response.text
 
 
+def test_chat_stream_uses_provider_stream_without_tools(monkeypatch) -> None:
+    from helm.providers.base import ChatMessage
+    from helm.providers.registry import ProviderRegistry
+    from helm.providers.resolver import ProviderResolver
+    from helm.runtime.loop import RuntimeLoop
+    from helm.web.api import app as app_module
+
+    class StreamingProvider:
+        id = "streaming"
+
+        async def complete(self, messages: list[ChatMessage], **kwargs):
+            raise AssertionError("complete should not be used for tool-free streaming")
+
+        async def stream(self, messages: list[ChatMessage], **kwargs):
+            yield "hello "
+            yield "**markdown**"
+
+    original_create_runtime = app_module.create_runtime
+
+    def fake_runtime(settings):
+        registry = ProviderRegistry()
+        registry.register(StreamingProvider())
+        return RuntimeLoop(
+            context_builder=original_create_runtime(settings).context_builder,
+            provider_resolver=ProviderResolver(registry, settings),
+        )
+
+    monkeypatch.setattr(app_module, "create_runtime", fake_runtime)
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/chat/stream",
+        json={
+            "provider": "streaming",
+            "base_url": "http://example.test/v1",
+            "model": "custom-model",
+            "api_key": "secret",
+            "prompt": "hello",
+        },
+    )
+
+    assert response.status_code == 200
+    assert '"type": "delta", "content": "hello "' in response.text
+    assert '"type": "delta", "content": "**markdown**"' in response.text
+    assert '"provider": "streaming"' in response.text
+
+
 def test_model_test_api_passes_profile_skills_and_toolsets(monkeypatch) -> None:
     from helm.runtime.result import RuntimeResult
     from helm.web.api import app as app_module

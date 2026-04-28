@@ -92,6 +92,11 @@ def create_app():
 
 async def _run_chat_stream(request: ChatRequest) -> AsyncIterator[str]:
     yield _json_line({"type": "status", "status": "running"})
+    if not request.toolsets:
+        async for line in _run_provider_text_stream(request):
+            yield line
+        return
+
     result = await _run_chat_result(request)
     for event in result["events"]:
         if event.get("type") == "tool.completed":
@@ -111,31 +116,55 @@ async def _run_chat_stream(request: ChatRequest) -> AsyncIterator[str]:
     )
 
 
+async def _run_provider_text_stream(request: ChatRequest) -> AsyncIterator[str]:
+    try:
+        settings = _settings_for_request(request)
+        runtime = create_runtime(settings)
+        invocation = _invocation_for_request(request)
+        profile = runtime.context_builder.resolve_profile(invocation)
+        messages = runtime.context_builder.build_messages(invocation)
+        provider = runtime.provider_resolver.resolve(profile, request.provider)
+        provider_kwargs = _provider_kwargs(request)
+        async for delta in provider.stream(messages, **provider_kwargs):
+            yield _json_line({"type": "delta", "content": delta})
+        yield _json_line(
+            {
+                "type": "done",
+                "status": "completed",
+                "error": None,
+                "events": [
+                    {
+                        "type": "provider.stream.completed",
+                        "provider": provider.id,
+                        "profile": profile.id,
+                    }
+                ],
+                "effective_config": _effective_config(request),
+            }
+        )
+    except Exception as exc:
+        yield _json_line(
+            {
+                "type": "done",
+                "status": "failed",
+                "error": f"{type(exc).__name__}: {exc}",
+                "events": [
+                    {
+                        "type": "runtime.failed",
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                    }
+                ],
+                "effective_config": _effective_config(request),
+            }
+        )
+
+
 async def _run_chat_result(request: ChatRequest) -> dict[str, object]:
     try:
         settings = _settings_for_request(request)
         runtime = create_runtime(settings)
-        result = await runtime.invoke(
-            RuntimeInvocation(
-                run_id="web",
-                task_id=None,
-                profile=request.profile,
-                goal="Conversation",
-                instructions=request.prompt,
-                provider=request.provider,
-                skills=request.skills,
-                toolsets=request.toolsets,
-                metadata={
-                    "temperature": request.temperature,
-                    "max_tokens": request.max_tokens,
-                    "extra_body": {
-                        "chat_template_kwargs": {
-                            "enable_thinking": request.enable_thinking,
-                        }
-                    },
-                },
-            )
-        )
+        result = await runtime.invoke(_invocation_for_request(request))
     except Exception as exc:
         return {
             "status": "failed",
@@ -156,6 +185,32 @@ async def _run_chat_result(request: ChatRequest) -> dict[str, object]:
         "events": result.events,
         "error": result.error,
         "effective_config": _effective_config(request),
+    }
+
+
+def _invocation_for_request(request: ChatRequest) -> RuntimeInvocation:
+    return RuntimeInvocation(
+        run_id="web",
+        task_id=None,
+        profile=request.profile,
+        goal="Conversation",
+        instructions=request.prompt,
+        provider=request.provider,
+        skills=request.skills,
+        toolsets=request.toolsets,
+        metadata=_provider_kwargs(request),
+    )
+
+
+def _provider_kwargs(request: ChatRequest) -> dict[str, object]:
+    return {
+        "temperature": request.temperature,
+        "max_tokens": request.max_tokens,
+        "extra_body": {
+            "chat_template_kwargs": {
+                "enable_thinking": request.enable_thinking,
+            }
+        },
     }
 
 

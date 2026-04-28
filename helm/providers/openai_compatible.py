@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 import json
 from typing import Any
@@ -19,14 +20,49 @@ class OpenAICompatibleProvider:
     timeout_seconds: int = 120
 
     async def complete(self, messages: list[ChatMessage], **kwargs: object) -> ProviderResponse:
-        client = AsyncOpenAI(
-            base_url=self.base_url.rstrip("/") + "/",
-            api_key=self.api_key,
-            http_client=httpx.AsyncClient(
-                timeout=self.timeout_seconds,
-                trust_env=False,
-            ),
-        )
+        async with httpx.AsyncClient(
+            timeout=self.timeout_seconds,
+            trust_env=False,
+        ) as http_client:
+            client = AsyncOpenAI(
+                base_url=self.base_url.rstrip("/") + "/",
+                api_key=self.api_key,
+                http_client=http_client,
+            )
+            response = await client.chat.completions.create(
+                **self._request_params(messages, kwargs)
+            )
+            return self._parse_response(response.model_dump())
+
+    async def stream(
+        self,
+        messages: list[ChatMessage],
+        **kwargs: object,
+    ) -> AsyncIterator[str]:
+        async with httpx.AsyncClient(
+            timeout=self.timeout_seconds,
+            trust_env=False,
+        ) as http_client:
+            client = AsyncOpenAI(
+                base_url=self.base_url.rstrip("/") + "/",
+                api_key=self.api_key,
+                http_client=http_client,
+            )
+            stream = await client.chat.completions.create(
+                **self._request_params(messages, kwargs),
+                stream=True,
+            )
+            async for chunk in stream:
+                for choice in chunk.choices:
+                    delta = choice.delta.content
+                    if delta:
+                        yield delta
+
+    def _request_params(
+        self,
+        messages: list[ChatMessage],
+        kwargs: dict[str, object],
+    ) -> dict[str, Any]:
         request_params: dict[str, Any] = {
             "model": str(kwargs.get("model") or self.model),
             "messages": [
@@ -41,9 +77,7 @@ class OpenAICompatibleProvider:
             request_params["max_tokens"] = int(kwargs["max_tokens"])
         if kwargs.get("extra_body") is not None:
             request_params["extra_body"] = kwargs["extra_body"]
-
-        response = await client.chat.completions.create(**request_params)
-        return self._parse_response(response.model_dump())
+        return request_params
 
     def _parse_response(self, response: dict[str, Any]) -> ProviderResponse:
         choices = response.get("choices") or []
